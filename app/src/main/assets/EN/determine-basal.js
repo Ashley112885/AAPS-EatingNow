@@ -586,7 +586,7 @@ var determine_basal = function determine_basal(glucose_status, currenttemp, iob_
     // sens_target_bg is used like a target, when the number is lower the ISF scaling is stronger
     // only allow adjusted ISF target when eatingnow time is OK dont use at night
     var sens_target_bg = (ENactive ?  ins_val : target_bg);
-    sens_target_bg = (ENWindowOK ? sens_target_bg : target_bg);
+    //sens_target_bg = (ENWindowOK ? sens_target_bg : target_bg);
 
     // define & apply ISFBGscaler as % to sens_BGscaler
     var sens_BGscaler = Math.log(bg/sens_target_bg)+1;
@@ -599,6 +599,11 @@ var determine_basal = function determine_basal(glucose_status, currenttemp, iob_
 
     // SAFETY: if above target allow scaling and profile ISF as the weakest, if below target use profile ISF as the strongest
     sens_currentBG = (bg > sens_target_bg ? Math.min(sens_currentBG,sens_normalTarget) : Math.max(sens_currentBG,sens_normalTarget));
+
+    // SAFETY: if not rising and accelerating keep sens as normal unless ENW
+    sens_currentBG = (delta > 4 && DeltaPct > 1.0 ? sens_currentBG : sens_normalTarget);
+    //sens_currentBG = (delta > 4 && DeltaPct > 1.0 || ENWindowOK ? sens_currentBG : sens_normalTarget);
+
     sens_currentBG = round(sens_currentBG,1);
     enlog += "sens_currentBG final result:"+ convert_bg(sens_currentBG, profile) +"\n";
 
@@ -1181,15 +1186,15 @@ var determine_basal = function determine_basal(glucose_status, currenttemp, iob_
 
     // evaluate prediction type and weighting - dont use when sleeping and below SMB BG Offset
     if (!ENSleepMode) {
-        if (sens_predType == "UAM") {
-            eBGweight = (!COB ? 0.50 : 0.35);
-            eBGweight = (delta > 4 && DeltaPct > 1.1 && !COB ? 0.75 : eBGweight); // rising and accelerating
-            eBGweight = (delta > 4 && DeltaPct > 1.0 && !COB && bg <= 144 ? 1 : eBGweight); // initial rising and accelerating
-            //eBGweight = (delta > 4 && DeltaPct > 1 && !COB && bg <= 144 && ENWindowOK ? 1 : eBGweight); // initial rising and accelerating
+        if (sens_predType == "UAM" && !COB) {
+            eBGweight = 0.50;
+            eBGweight = (delta > 4 && DeltaPct > 1.1 ? 0.55 : eBGweight); // rising and accelerating
+            eBGweight = (delta > 4 && DeltaPct > 1.0 && bg <= 144 ? 0.55 : eBGweight); // initial rising and accelerating
+            eBGweight = (delta > 8 && delta < 18 && DeltaPct > 1.0 && bg <= 144 ? 1 : eBGweight); // initial rising and accelerating
         }
         if (sens_predType == "COB") {
             eBGweight = 0.50;
-            eBGweight = (delta > 4 && DeltaPct > 1.0 && bg <= 144 ? 1 : eBGweight); // initial rising and accelerating
+            //eBGweight = (delta > 4 && DeltaPct > 1.0 && bg <= 144 ? 1 : eBGweight); // initial rising and accelerating
         }
         // EXPERIMENT: With no sens_future is there no present?
         //eBGweight = (ENWindowOK ? eBGweight : 0);
@@ -1213,6 +1218,9 @@ var determine_basal = function determine_basal(glucose_status, currenttemp, iob_
     // SAFETY: if sleeping then use sens at normal target
     insulinReq_sens = (ENSleepMode ? sens_normalTarget : insulinReq_sens);
 
+    //EXPERIMENT: keep sens as sens at normalTarget
+    insulinReq_sens = sens_normalTarget;
+
     insulinReq_sens = round(insulinReq_sens,1);
     enlog += "* eBGweight:\n";
     enlog += "sens_predType: " + sens_predType+"\n";
@@ -1221,7 +1229,7 @@ var determine_basal = function determine_basal(glucose_status, currenttemp, iob_
 
     rT.COB=meal_data.mealCOB;
     rT.IOB=iob_data.iob;
-    rT.reason="COB: " + round(meal_data.mealCOB, 1) + ", Dev: " + convert_bg(deviation, profile) + ", BGI: " + convert_bg(bgi, profile) + ", Delta: " + glucose_status.delta + "/" + glucose_status.short_avgdelta + (delta > 0 ? "=" + round(DeltaPct*100)+ "%" : "") + ", ISF: " + convert_bg(sens_normalTarget, profile) + (profile.use_sens_TDD && sens_normalTarget == MaxISF ? "*" : "") + "/" + convert_bg(sens, profile) +  "=" + convert_bg(insulinReq_sens, profile) + ", CR: " + round(carb_ratio, 2) + ", Target: " + convert_bg(target_bg, profile) + (target_bg !=normalTarget ? "(" +convert_bg(normalTarget, profile)+")" : "") + ", minPredBG " + convert_bg(minPredBG, profile) + ", minGuardBG " + convert_bg(minGuardBG, profile) + ", IOBpredBG " + convert_bg(lastIOBpredBG, profile) + ", LGS: " + convert_bg(threshold, profile);
+    rT.reason="COB: " + round(meal_data.mealCOB, 1) + ", Dev: " + convert_bg(deviation, profile) + ", BGI: " + convert_bg(bgi, profile) + ", Delta: " + glucose_status.delta + "/" + glucose_status.short_avgdelta + "=" + round(DeltaPct*100)+ "%" + ", ISF: " + convert_bg(sens_normalTarget, profile) + (profile.use_sens_TDD && sens_normalTarget == MaxISF ? "*" : "") + "/" + convert_bg(sens, profile) +  "=" + convert_bg(insulinReq_sens, profile) + ", CR: " + round(carb_ratio, 2) + ", Target: " + convert_bg(target_bg, profile) + (target_bg !=normalTarget ? "(" +convert_bg(normalTarget, profile)+")" : "") + ", minPredBG " + convert_bg(minPredBG, profile) + ", minGuardBG " + convert_bg(minGuardBG, profile) + ", IOBpredBG " + convert_bg(lastIOBpredBG, profile) + ", LGS: " + convert_bg(threshold, profile);
 
     if (lastCOBpredBG > 0) {
         rT.reason += ", " + (ignoreCOB && !ENWindowOK ? "!" : "") + "COBpredBG " + convert_bg(lastCOBpredBG, profile);
