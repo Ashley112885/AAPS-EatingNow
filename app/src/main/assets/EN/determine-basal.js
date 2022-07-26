@@ -235,6 +235,7 @@ var determine_basal = function determine_basal(glucose_status, currenttemp, iob_
     var ENStartOffset = (profile.EatingNowTimeEnd < profile.EatingNowTimeStart && nowhrs < profile.EatingNowTimeEnd ? 86400000 : 0), ENEndOffset = (profile.EatingNowTimeEnd < profile.EatingNowTimeStart && nowhrs > profile.EatingNowTimeStart ? 86400000 : 0);
     var ENStartTime = new Date().setHours(profile.EatingNowTimeStart,0,0,0)-ENStartOffset, ENEndTime = new Date().setHours(profile.EatingNowTimeEnd,0,0,0) + ENEndOffset;
     var COB = meal_data.mealCOB;
+    var ENTTActive =  meal_data.activeENTempTargetDuration > 0;
 
     // variables for deltas
     var delta = glucose_status.delta, deltaShortRise = 0, DeltaPct = 1;
@@ -323,8 +324,8 @@ var determine_basal = function determine_basal(glucose_status, currenttemp, iob_
         // If there are COB enable eating now
         if (COB) ENactive = true;
         // no EN with a TT other than normal target
-        if (profile.temptargetSet) ENactive = false;
-        if (profile.temptargetSet && target_bg <= normalTarget) ENactive = true;
+        if (profile.temptargetSet && !ENTTActive) ENactive = false;
+        if (ENTTActive) ENactive = true;
     }
 
     //ENactive = false; //DEBUG
@@ -392,7 +393,7 @@ var determine_basal = function determine_basal(glucose_status, currenttemp, iob_
         if (c1Time != 9999 && c1Time > ENBkfstWindow) firstMealWindow = false; // first COB entry has also happened and is more than EN Window
         if (tt1Time != 9999 && tt1Time > ENBkfstWindow) firstMealWindow = false; // first TT has also happened and is more than EN Window
         ENWindowRunTime = b1Time;
-    } else if (ENactive && profile.temptargetSet && tt1Time < ENBkfstWindow) { // first bolus entry is active and within EN Window
+    } else if (ENactive && ENTTActive && tt1Time < ENBkfstWindow) { // first bolus entry is active and within EN Window
         firstMealWindow = true;
         if (b1Time != 9999 && b1Time > ENBkfstWindow) firstMealWindow = false; // first bolus has also happened and is more than EN Window
         if (c1Time != 9999 && c1Time > ENBkfstWindow) firstMealWindow = false; // first COB entry has also happened and is more than EN Window
@@ -417,6 +418,7 @@ var determine_basal = function determine_basal(glucose_status, currenttemp, iob_
 
     enlog += "ENTime: " + ENTime + ", firstMealWindow: "+ firstMealWindow + ", firstMealScaling: "+ firstMealScaling + ", b1Time:" +b1Time+", c1Time:" +c1Time+ ", tt1Time:"+tt1Time+", bTime:" +bTime+ ", cTime:" +cTime+ ", ttTime:"+ttTime+", ENWindowOK:" + ENWindowOK+"\n";
     enlog += "ENWindowRunTime: " + ENWindowRunTime+", ENWindowDuration: " + ENWindowDuration+"\n";
+    enlog += "ENTTActive: " + ENTTActive+"\n";
 
     // If GhostCOB is enabled we will use COB when ENWindowOK but outside this window UAM will be used
     if (ignoreCOB && ENWindowOK && meal_data.mealCOB > 0 ) ignoreCOB = false;
@@ -462,10 +464,10 @@ var determine_basal = function determine_basal(glucose_status, currenttemp, iob_
     // TIR_sens - the amount of % like AS *** UNDER CONSTRUCTION ****
     var TIR_sens = 0;
     enlog += "* TIR_sens:\n";
-    if (meal_data.TIRW1H > 60 && TIR_sens == 0) TIR_sens += 2; //10%
-    if (meal_data.TIRW2H > 10 && TIR_sens == 2) TIR_sens += 1; //15%
-    if (meal_data.TIRW3H > 10 && TIR_sens == 3) TIR_sens += 1; //20%
-    if (meal_data.TIRW4H > 10 && TIR_sens == 4) TIR_sens += 1; //25%
+//    if (meal_data.TIRW1H > 60 && TIR_sens == 0) TIR_sens += 2; //10%
+//    if (meal_data.TIRW2H > 10 && TIR_sens == 2) TIR_sens += 1; //15%
+//    if (meal_data.TIRW3H > 10 && TIR_sens == 3) TIR_sens += 1; //20%
+//    if (meal_data.TIRW4H > 10 && TIR_sens == 4) TIR_sens += 1; //25%
     TIR_sens = Math.min (1+(TIR_sens*0.05), profile.autosens_max);
     TIR_sens = 1; // disabling as testing
 
@@ -600,9 +602,8 @@ var determine_basal = function determine_basal(glucose_status, currenttemp, iob_
     // SAFETY: if above target allow scaling and profile ISF as the weakest, if below target use profile ISF as the strongest
     sens_currentBG = (bg > sens_target_bg ? Math.min(sens_currentBG,sens_normalTarget) : Math.max(sens_currentBG,sens_normalTarget));
 
-    // SAFETY: if not rising and accelerating keep sens as normal unless ENW
+    // SAFETY: if not rising and accelerating keep sens as normal
     sens_currentBG = (delta > 4 && DeltaPct > 1.0 ? sens_currentBG : sens_normalTarget);
-    //sens_currentBG = (delta > 4 && DeltaPct > 1.0 || ENWindowOK ? sens_currentBG : sens_normalTarget);
 
     sens_currentBG = round(sens_currentBG,1);
     enlog += "sens_currentBG final result:"+ convert_bg(sens_currentBG, profile) +"\n";
@@ -1188,13 +1189,14 @@ var determine_basal = function determine_basal(glucose_status, currenttemp, iob_
     if (!ENSleepMode) {
         if (sens_predType == "UAM" && !COB) {
             eBGweight = 0.50;
-            eBGweight = (delta > 4 && DeltaPct > 1.1 ? 0.55 : eBGweight); // rising and accelerating
-            eBGweight = (delta > 4 && DeltaPct > 1.0 && bg <= 144 ? 0.55 : eBGweight); // initial rising and accelerating
-            eBGweight = (delta > 8 && delta < 18 && DeltaPct > 1.0 ? 1 : eBGweight); // initial rising and accelerating
+//            eBGweight = (delta > 4 && DeltaPct > 1.1 ? 0.55 : eBGweight); // rising and accelerating
+//            eBGweight = (delta > 4 && DeltaPct > 1.0 && bg <= 144 ? 0.55 : eBGweight); // initial rising and accelerating
+            eBGweight = (delta > 4 && delta < 18 && DeltaPct > 1.0 ? 1 : eBGweight); // initial rising and accelerating
 //            eBGweight = (delta > 8 && delta < 18 && DeltaPct > 1.0 && bg <= 144 ? 1 : eBGweight); // initial rising and accelerating
         }
         if (sens_predType == "COB" || (sens_predType == "UAM" && COB)) {
             eBGweight = 0.50;
+            eBGweight = (delta > 4 && delta < 18 && DeltaPct > 1.0 ? 1 : eBGweight); // initial rising and accelerating
             //eBGweight = (delta > 4 && DeltaPct > 1.0 && bg <= 144 ? 1 : eBGweight); // initial rising and accelerating
         }
         // EXPERIMENT: With no sens_future is there no present?
@@ -1209,8 +1211,11 @@ var determine_basal = function determine_basal(glucose_status, currenttemp, iob_
         // SAFETY: if bg is falling or slowing revert to normal minPredBG weighting
         insulinReq_bg = (delta < 0 && eventualBG < target_bg || DeltaPct <1 ? insulinReq_bg_orig : insulinReq_bg);
 
+        // sens calculation for insulinReq can be stronger when the EN TT is active and in range
+        insulinReq_sens = (delta > 4 && delta < 18 && DeltaPct > 1.0 && ENTTActive && bg < 144 ? sens : sens_normalTarget);
+
         // SAFETY: set insulinReq_sens to profile sens if bg falling or slowing
-        insulinReq_sens = (delta < 0 && eventualBG < target_bg  || DeltaPct <1 ? sens_normalTarget : sens);
+        insulinReq_sens = (delta < 0 && eventualBG < target_bg  || DeltaPct <1 ? sens_normalTarget : insulinReq_sens);
     }
 
     // SAFETY: normal minPredBG overnight and below smb bg offset
@@ -1220,7 +1225,7 @@ var determine_basal = function determine_basal(glucose_status, currenttemp, iob_
     insulinReq_sens = (ENSleepMode ? sens_normalTarget : insulinReq_sens);
 
     //EXPERIMENT: keep sens as sens at normalTarget
-    insulinReq_sens = sens_normalTarget;
+    //insulinReq_sens = sens_normalTarget;
 
     insulinReq_sens = round(insulinReq_sens,1);
     enlog += "* eBGweight:\n";
@@ -1245,8 +1250,7 @@ var determine_basal = function determine_basal(glucose_status, currenttemp, iob_
     if (!ENSleepMode) rT.reason += (ENactive ? "On" : "Off");
     rT.reason += (ENSleepMode ? "Sleep" : "");
     rT.reason += (ENSleepMode ? " (SMB bg>" + convert_bg(SMBbgOffset,profile) + ")": "");
-    if (profile.temptargetSet && target_bg != normalTarget) rT.reason += " TT" + (target_bg >= normalTarget ? " &gt;" : " &lt;") + "=" +convert_bg(normalTarget, profile);
-    if (profile.temptargetSet && target_bg == normalTarget) rT.reason += " TT=" + convert_bg(normalTarget, profile);
+    if (profile.temptargetSet) rT.reason += (ENTTActive ? " EN-TT" :" TT") + "=" +convert_bg(target_bg, profile);
     rT.reason += (COB && !profile.temptargetSet && !ENWindowOK ? " COB&gt;0" : "");
 
     // EN window status
@@ -1394,7 +1398,7 @@ var determine_basal = function determine_basal(glucose_status, currenttemp, iob_
 
         // calculate 30m low-temp required to get projected BG up to target
         // multiply by 2 to low-temp faster for increased hypo safety
-        var insulinReq = 2 * Math.min(0, (eventualBG - target_bg) / insulinReq_sens);
+        var insulinReq = 2 * Math.min(0, (eventualBG - target_bg) / sens);
         insulinReq = round( insulinReq , 2);
         // calculate naiveInsulinReq based on naive_eventualBG
         var naiveInsulinReq = Math.min(0, (naive_eventualBG - target_bg) / sens);
@@ -1497,13 +1501,12 @@ var determine_basal = function determine_basal(glucose_status, currenttemp, iob_
 
         // insulinReq is the additional insulin required to get minPredBG down to target_bg
         //console.error(minPredBG,eventualBG);
-        insulinReq = round( (Math.min(minPredBG,eventualBG) - target_bg) / insulinReq_sens, 2);
+        insulinReq = round( (Math.min(minPredBG,eventualBG) - target_bg) / insulinReq_sens, 3);
         // keep the original insulinReq for reporting
         var insulinReqOrig = insulinReq;
 
         // use eBGweight for insulinReq
         insulinReq = (insulinReq_bg-target_bg) / insulinReq_sens;
-        insulinReq = round(insulinReq,2);
 
         // if that would put us over max_iob, then reduce accordingly
         if (insulinReq > max_iob-iob_data.iob) {
@@ -1691,6 +1694,12 @@ var determine_basal = function determine_basal(glucose_status, currenttemp, iob_
         }
 
         var maxSafeBasal = tempBasalFunctions.getMaxSafeBasal(profile);
+
+        // if more insulin has been calculated and an SMB given reduce the temp rate
+        if (insulinReq > insulinReqOrig && rT.units > 0) {
+            rate = basal + (2 * insulinReq) - rT.units;
+            rate = round_basal(rate, profile);
+        }
 
         if (rate > maxSafeBasal) {
             rT.reason += "adj. req. rate: "+round(rate, 2)+" to maxSafeBasal: "+maxSafeBasal+", ";
