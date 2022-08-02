@@ -19,7 +19,7 @@
 // Fix the round_basal issue?
 function round_basal(basal, profile)
 {
-    profile = 2; // force number of decimal places for the pump
+    profile = 3; // force number of decimal places for the pump
     return round(basal, profile);
 }
 
@@ -40,6 +40,7 @@ function calculate_expected_delta(target_bg, eventual_bg, bgi) {
     var target_delta = target_bg - eventual_bg;
     return /* expectedDelta */ round(bgi + (target_delta / five_min_blocks), 1);
 }
+
 
 function convert_bg(value, profile)
 {
@@ -1066,16 +1067,6 @@ var determine_basal = function determine_basal(glucose_status, currenttemp, iob_
 
     console.error("UAM Impact:",uci,"mg/dL per 5m; UAM Duration:",UAMduration,"hours");
 
-//    enlog += "*** TESTING FUTURE DELTA ***\n";
-//    var insulinPeak5m = 18, COBpredBGsDelta, UAMpredBGsDelta;
-//    enlog += "insulinPeak5m: "+insulinPeak5m+"\n";
-//    enlog += "COBpredBGs.length: " + COBpredBGs.length+"\n";
-//    enlog += "UAMpredBGs.length: " + UAMpredBGs.length+"\n";
-//    COBpredBGsDelta = round((COBpredBGs.length >= insulinPeak5m + 2 ? COBpredBGs[insulinPeak5m+2]-COBpredBGs[insulinPeak5m] : 0),1);
-//    UAMpredBGsDelta = round((UAMpredBGs.length >= insulinPeak5m + 2 ? UAMpredBGs[insulinPeak5m+2]-UAMpredBGs[insulinPeak5m] : 0),1);
-//    enlog += "COBpredBGsDelta: " + COBpredBGsDelta+"\n";
-//    enlog += "UAMpredBGsDelta: " + UAMpredBGsDelta+"\n";
-//    enlog += "*** TESTING FUTURE DELTA ***\n";
 
     minIOBPredBG = Math.max(39,minIOBPredBG);
     minCOBPredBG = Math.max(39,minCOBPredBG);
@@ -1185,24 +1176,22 @@ var determine_basal = function determine_basal(glucose_status, currenttemp, iob_
     if (lastUAMpredBG > 0 && eventualBG >= lastUAMpredBG) sens_predType = "UAM"; // UAM or any prediction > UAM is the default
     if (lastCOBpredBG > 0 && eventualBG == lastCOBpredBG) sens_predType = "COB"; // if COB prediction is present eventualBG aligns
 
-    // evaluate prediction type and weighting - dont use when sleeping and below SMB BG Offset
-    if (!ENSleepMode) {
+    // evaluate prediction type and weighting - Only use when ENWindow is active OR when its night and SMB enabled due to higher BG
+    if (ENWindowOK || !ENSleepMode && !ENtimeOK) {
         if (sens_predType == "UAM" && !COB) {
             eBGweight = 0.50;
-//            eBGweight = (delta > 4 && DeltaPct > 1.1 ? 0.55 : eBGweight); // rising and accelerating
-//            eBGweight = (delta > 4 && DeltaPct > 1.0 && bg <= 144 ? 0.55 : eBGweight); // initial rising and accelerating
+            // eBGweight = (delta > 4 && DeltaPct > 1.1 ? 0.55 : eBGweight); // rising and accelerating
+            // eBGweight = (delta > 4 && DeltaPct > 1.0 && bg <= 144 ? 0.55 : eBGweight); // initial rising and accelerating
             // MAYBE? eBGweight = (delta > 4 && delta < 18 && DeltaPct > 1.0 ? 1 : eBGweight); // initial rising and accelerating
-//            eBGweight = (delta > 8 && delta < 18 && DeltaPct > 1.0 && bg <= 144 ? 1 : eBGweight); // initial rising and accelerating
+            // eBGweight = (delta > 8 && delta < 18 && DeltaPct > 1.0 && bg <= 144 ? 1 : eBGweight); // initial rising and accelerating
         }
         if (sens_predType == "COB" || (sens_predType == "UAM" && COB)) {
             eBGweight = 0.50;
             // MAYBE? eBGweight = (delta > 4 && delta < 18 && DeltaPct > 1.0 ? 1 : eBGweight); // initial rising and accelerating
             //eBGweight = (delta > 4 && DeltaPct > 1.0 && bg <= 144 ? 1 : eBGweight); // initial rising and accelerating
         }
-
         // sens calculation for insulinReq can be stronger when the EN TT is active and in range
-        insulinReq_sens = (delta > 4 && DeltaPct > 1.0 && ENTTActive && bg < 144 ? sens : sens_normalTarget);
-        //insulinReq_sens = (delta > 4 && delta < 18 && DeltaPct > 1.0 && ENTTActive && bg < 144 ? sens : sens_normalTarget);
+        insulinReq_sens = (delta > 4 && DeltaPct > 1.0 && ENWindowOK && bg < 144 ? sens : sens_normalTarget);
 
         // SAFETY: set insulinReq_sens to profile sens if bg falling or slowing
         insulinReq_sens = (delta < 0 && eventualBG < target_bg  || DeltaPct <1 ? sens_normalTarget : insulinReq_sens);
@@ -1214,20 +1203,11 @@ var determine_basal = function determine_basal(glucose_status, currenttemp, iob_
         eBGweight = (delta < 0 && eventualBG < target_bg || DeltaPct <1 ? eBGweight_orig : eBGweight);
 
         // SAFETY: if sens/insulinReq_sens is stronger revert to 50% minPredBG weighting
-        eBGweight = (insulinReq_sens == sens ? 0.50 : eBGweight);
-
-        // calculate the prediction bg based on the weightings for minPredBG and eventualBG
-        insulinReq_bg = (Math.max(minPredBG,40) * (1-eBGweight)) + (Math.max(eventualBG,40) * eBGweight);
+        eBGweight = (insulinReq_sens < sens_normalTarget ? 0.50 : eBGweight);
     }
-
-    // SAFETY: normal minPredBG overnight and below smb bg offset
-    eBGweight = (ENSleepMode ? eBGweight_orig : eBGweight);
 
     // calculate the prediction bg based on the weightings for minPredBG and eventualBG
     insulinReq_bg = (Math.max(minPredBG,40) * (1-eBGweight)) + (Math.max(eventualBG,40) * eBGweight);
-
-    // SAFETY: if sleeping then use sens at normal target
-    insulinReq_sens = (ENSleepMode ? sens_normalTarget : insulinReq_sens);
 
     insulinReq_sens = round(insulinReq_sens,1);
     enlog += "* eBGweight:\n";
@@ -1446,7 +1426,7 @@ var determine_basal = function determine_basal(glucose_status, currenttemp, iob_
                     return tempBasalFunctions.setTempBasal(rate, durationReq, profile, rT, currenttemp);
                 }
             } else {
-                rT.reason += ", setting " + round(rate,2) + "U/hr. ";
+                rT.reason += ", setting " + round(rate,3) + "U/hr. ";
             }
             return tempBasalFunctions.setTempBasal(rate, 30, profile, rT, currenttemp);
         }
@@ -1699,18 +1679,19 @@ var determine_basal = function determine_basal(glucose_status, currenttemp, iob_
 
         // if more insulin has been calculated and an SMB given reduce the temp rate
         if (insulinReq > insulinReqOrig && rT.units > 0) {
-            rate = basal + (2 * insulinReq) - rT.units;
+            rate = basal + insulinReq - rT.units;
             rate = round_basal(rate, profile);
+            rT.reason += " TBR reduced: "+round(rate, 3)+", ";
         }
 
         if (rate > maxSafeBasal) {
-            rT.reason += "adj. req. rate: "+round(rate, 2)+" to maxSafeBasal: "+maxSafeBasal+", ";
+            rT.reason += "adj. req. rate: "+round(rate, 3)+" to maxSafeBasal: "+maxSafeBasal+", ";
             rate = round_basal(maxSafeBasal, profile);
         }
 
         insulinScheduled = currenttemp.duration * (currenttemp.rate - basal) / 60;
-        if (insulinScheduled >= insulinReq * 2) { // if current temp would deliver >2x more than the required insulin, lower the rate
-            rT.reason += currenttemp.duration + "m@" + (currenttemp.rate).toFixed(2) + " &gt; 2 * insulinReq. Setting temp basal of " + rate + "U/hr. ";
+        if (insulinScheduled >= rate - basal) { // if current temp would deliver more than the required remaining insulin, lower the rate
+            rT.reason += currenttemp.duration + "m@" + (currenttemp.rate).toFixed(2) + " &gt;"+rate+". Setting temp basal of " + rate + "U/hr. ";
             return tempBasalFunctions.setTempBasal(rate, 30, profile, rT, currenttemp);
         }
 
