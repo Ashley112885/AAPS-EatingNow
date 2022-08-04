@@ -404,9 +404,9 @@ var determine_basal = function determine_basal(glucose_status, currenttemp, iob_
     // set the ENW run and duration depending on meal type
     ENWindowRunTime = (firstMealWindow ? ENWindowRunTime : Math.min(cTime, bTime, ttTime));
     var ENWindowDuration = (firstMealWindow ? ENBkfstWindow : profile.ENWindow);
-    var ENWttDuration = (meal_data.activeENTempTargetDuration ? meal_data.activeENTempTargetDuration : 0);
+    var ENWttDuration = (meal_data.activeENTempTargetDuration ? meal_data.activeENTempTargetDuration : ENWindowDuration);
     //ENWindowDuration = (!firstMealWindow && meal_data.activeENTempTargetDuration > ENWindowDuration - ENWindowRunTime ? meal_data.activeENTempTargetDuration : ENWindowDuration);
-    ENWindowDuration = (firstMealWindow ? ENWindowDuration : Math.max(ENWttDuration,ENWindowDuration));
+    ENWindowDuration = (firstMealWindow ? ENWindowDuration : Math.min(ENWttDuration,ENWindowDuration));
 
     // ENWindowOK is when there is a recent COB entry or manual bolus
     ENWindowOK = (ENactive && ENWindowRunTime < ENWindowDuration || ENWTriggerOK);
@@ -604,7 +604,7 @@ var determine_basal = function determine_basal(glucose_status, currenttemp, iob_
     sens_currentBG = (bg > sens_target_bg ? Math.min(sens_currentBG,sens_normalTarget) : Math.max(sens_currentBG,sens_normalTarget));
 
     // SAFETY: if not rising and accelerating keep sens as normal
-    sens_currentBG = (delta > 4 && DeltaPct > 1.0 ? sens_currentBG : sens_normalTarget);
+    //sens_currentBG = (delta > 4 && DeltaPct > 1.0 ? sens_currentBG : sens_normalTarget);
 
     sens_currentBG = round(sens_currentBG,1);
     enlog += "sens_currentBG final result:"+ convert_bg(sens_currentBG, profile) +"\n";
@@ -1177,7 +1177,8 @@ var determine_basal = function determine_basal(glucose_status, currenttemp, iob_
     if (lastCOBpredBG > 0 && eventualBG == lastCOBpredBG) sens_predType = "COB"; // if COB prediction is present eventualBG aligns
 
     // evaluate prediction type and weighting - Only use when ENWindow is active OR when its night and SMB enabled due to higher BG
-    if (ENWindowOK || !ENSleepMode && !ENtimeOK) {
+    if (ENactive || !ENSleepMode && !ENtimeOK) {
+    //if (ENWindowOK || !ENSleepMode && !ENtimeOK) {
         if (sens_predType == "UAM" && !COB) {
             eBGweight = 0.50;
             // eBGweight = (delta > 4 && DeltaPct > 1.1 ? 0.55 : eBGweight); // rising and accelerating
@@ -1191,7 +1192,8 @@ var determine_basal = function determine_basal(glucose_status, currenttemp, iob_
             //eBGweight = (delta > 4 && DeltaPct > 1.0 && bg <= 144 ? 1 : eBGweight); // initial rising and accelerating
         }
         // sens calculation for insulinReq can be stronger when the EN TT is active and in range
-        insulinReq_sens = (delta > 4 && DeltaPct > 1.0 && ENWindowOK && bg < 144 ? sens : sens_normalTarget);
+        insulinReq_sens = (delta > 4 && DeltaPct > 1.0 && ENWindowRunTime < ENWindowDuration ? sens : sens_normalTarget);
+        //insulinReq_sens = (delta > 4 && DeltaPct > 1.0 && ENWindowOK && bg < 144 ? sens : sens_normalTarget);
 
         // SAFETY: set insulinReq_sens to profile sens if bg falling or slowing
         insulinReq_sens = (delta < 0 && eventualBG < target_bg  || DeltaPct <1 ? sens_normalTarget : insulinReq_sens);
