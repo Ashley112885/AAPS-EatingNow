@@ -1188,21 +1188,29 @@ var determine_basal = function determine_basal(glucose_status, currenttemp, iob_
         }
 
         // SAFETY: set insulinReq_sens to profile sens if bg falling or slowing
-        insulinReq_sens = (delta < 0 && eventualBG < target_bg  || DeltaPct <1 ? sens_normalTarget : insulinReq_sens);
+        insulinReq_sens = (delta < 0 && eventualBG < target_bg  || DeltaPct <=1 ? sens_normalTarget : insulinReq_sens);
 
-        // SAFETY: when high and delta or delta is slowing use minPredBG
-        eBGweight = (bg > ISFbgMax || DeltaPct <=1 ? eBGweight_orig : eBGweight);
+        // SAFETY: when high and delta is faster use minPredBG, slow delta inherits eBGw in an attempt to reduce stubborn high
+        eBGweight = (bg > ISFbgMax && delta >= 9 ? eBGweight_orig : eBGweight);
 
-        // SAFETY: if bg is falling or slowing revert to normal minPredBG weighting
-        eBGweight = (delta < 0 && eventualBG < target_bg || DeltaPct <=1 ? eBGweight_orig : eBGweight);
+        // SAFETY: if bg is falling or slowing revert to normal minPredBG weighting, excludes first meal
+        eBGweight = (delta < 0 && eventualBG < target_bg || DeltaPct <=1 && !firstMealWindow ? eBGweight_orig : eBGweight);
 
         // SAFETY: if insulinReq_sens is stronger within ENW inherit eBGw else default
         if (insulinReq_sens < sens_normalTarget) eBGweight = (ENWindowOK ? eBGweight : eBGweight_orig);
         //if (insulinReq_sens < sens_normalTarget && !firstMealScaling) eBGweight = (ENWindowOK ? eBGweight : eBGweight_orig);
+
+        // calculate the prediction bg based on the weightings for minPredBG and eventualBG
+        insulinReq_bg = (Math.max(minPredBG,40) * (1-eBGweight)) + (Math.max(eventualBG,40) * eBGweight);
+
+
+        // if 30 minutes into an ENW allow the eBGw to provide a stronger insulinReq_sens
+        var sens_future = sens_normalTarget / (Math.log(insulinReq_bg/ins_val)+1);
+        insulinReq_sens = (ENWindowOK && ENWindowRunTime < ENWindowDuration && !firstMealWindow ? Math.min(insulinReq_sens,sens_future) : insulinReq_sens);
     }
 
-    // calculate the prediction bg based on the weightings for minPredBG and eventualBG
-    insulinReq_bg = (Math.max(minPredBG,40) * (1-eBGweight)) + (Math.max(eventualBG,40) * eBGweight);
+
+
 
     insulinReq_sens = round(insulinReq_sens,1);
     enlog += "* eBGweight:\n";
@@ -1535,8 +1543,9 @@ var determine_basal = function determine_basal(glucose_status, currenttemp, iob_
             // START === if we are eating now and BGL prediction is higher than normal target ===
             if (ENactive && eventualBG > target_bg) {
 
-                // EN insulinReqPct is now used, for ENW use 100%
-                insulinReqPct = (ENWindowOK ? 1 : ENinsulinReqPct);
+                // EN insulinReqPct is now used, for ENW use 100% excludes IOB trigger ensuring close proximity to treatment
+                insulinReqPct = (ENWindowRunTime < ENWindowDuration ? 1 : ENinsulinReqPct);
+                //insulinReqPct = (ENWindowOK ? 1 : ENinsulinReqPct);
                 //insulinReqPct = (ENTTActive ? 1 : ENinsulinReqPct);
 
                 // set EN SMB limit for COB or UAM
@@ -1566,7 +1575,7 @@ var determine_basal = function determine_basal(glucose_status, currenttemp, iob_
 
                 // ============== DELTA & IOB BASED RESTRICTIONS ==============
                 // if the delta is less than 4 and insulinReq_sens is stronger restrict larger SMB
-                if (insulinReq_sens < sens_normalTarget && delta <= 4 && !firstMealScaling) ENMaxSMB = Math.min(maxBolus,ENMaxSMB); // use the most restrictive
+                //if (insulinReq_sens < sens_normalTarget && delta <= 4 && !firstMealScaling) ENMaxSMB = Math.min(maxBolus,ENMaxSMB); // use the most restrictive
                 // ===================================================
 
                 if (ENtimeOK) {
@@ -1685,9 +1694,9 @@ var determine_basal = function determine_basal(glucose_status, currenttemp, iob_
             return tempBasalFunctions.setTempBasal(rate, 30, profile, rT, currenttemp);
         }
 
-        if (currenttemp.duration > 5 && (round_basal(rate, profile) <= round_basal(currenttemp.rate, profile))) { // if required temp <~ existing temp basal
+        if (currenttemp.duration > 5 && (round_basal(rate, profile) <= round_basal(currenttemp.rate, profile))) { // if current temp > required temp
             rT.reason += "temp " + round(currenttemp.rate,2) + " &gt;~ req " + rate + "U/hr. ";
-            return rT;
+            return tempBasalFunctions.setTempBasal(rate, 30, profile, rT, currenttemp);
         }
 
         // required temp > existing temp basal
