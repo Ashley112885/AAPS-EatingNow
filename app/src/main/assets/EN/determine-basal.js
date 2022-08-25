@@ -329,6 +329,8 @@ var determine_basal = function determine_basal(glucose_status, currenttemp, iob_
         // no EN with a TT other than normal target
         if (profile.temptargetSet && !ENTTActive) ENactive = false;
         if (ENTTActive) ENactive = true;
+        // allow ENW overnight when EN is active and allowed in prefs
+        ENtimeOK = (ENactive && profile.allowENWovernight);
     }
 
     //ENactive = false; //DEBUG
@@ -519,7 +521,7 @@ var determine_basal = function determine_basal(glucose_status, currenttemp, iob_
             sensitivityRatio = round(sensitivityRatio,2);
             enlog += "Sensitivity ratio <1 is now: "+sensitivityRatio+";\n";
         }
-        sens_normalTarget = (!profile.use_sens_TDD ? sens_normalTarget / sensitivityRatio : sens_normalTarget); // adjust ISF when not using sens_TDD
+        sens_normalTarget = (!profile.use_sens_TDD || !profile.enableSRTDD ? sens_normalTarget / sensitivityRatio : sens_normalTarget); // adjust ISF when not using sens_TDD
     }
     //enlog +="****** DEBUG ******\n"+"TDD/tdd24h = "+TDD+"/"+tdd24h+"="+TDD/tdd24h+"\n****** DEBUG ******\n";
 
@@ -1169,8 +1171,8 @@ var determine_basal = function determine_basal(glucose_status, currenttemp, iob_
     // insulinReq_sens is calculated using a percentage of eventualBG (eBGweight) with the rest as minPredBG, to reduce the risk of overdosing.
     var insulinReq_sens = sens_normalTarget, insulinReq_bg_orig = Math.min(minPredBG,eventualBG), insulinReq_bg = insulinReq_bg_orig, sens_predType = "NA", eBGweight_orig = (minPredBG < eventualBG ? 0 : 1), eBGweight = eBGweight_orig;
 
-    // EN TT active within 30 minutes and no bolus yet and no COB increase insulinReq_bg to provide initial insulinReq
-    var insulinReq_bg_boost = (ENTTActive && ttTime < 30 && lastBolusAge > ttTime && !COB ? 90 : 0);
+    // EN TT active and no bolus yet with UAM increase insulinReq_bg to provide initial insulinReq using 30 minutes of delta, max 90
+    var insulinReq_bg_boost = (ENTTActive && lastBolusAge > ttTime && !COB ? Math.min(delta * 6, 90) : 0);
 
     // categorize the eventualBG prediction type for more accurate weighting
     if (lastUAMpredBG > 0 && eventualBG >= lastUAMpredBG) sens_predType = "UAM"; // UAM or any prediction > UAM is the default
@@ -1184,7 +1186,8 @@ var determine_basal = function determine_basal(glucose_status, currenttemp, iob_
             insulinReq_sens = (delta > 0 && DeltaPct > 1.0 ? sens : sens_normalTarget);
         }
         if (sens_predType == "COB" || (sens_predType == "UAM" && COB)) {
-            eBGweight = (sens_predType == "COB" ? 0.50 : eBGweight);
+            eBGweight = 0.50;
+            //eBGweight = (sens_predType == "COB" ? 0.50 : eBGweight);
             // sens calculation for insulinReq can be stronger when the EN TT and accelerating
             insulinReq_sens = (delta > 0 && DeltaPct > 1.0 && sens_predType == "COB" ? sens : sens_normalTarget);
         }
@@ -1518,26 +1521,27 @@ var determine_basal = function determine_basal(glucose_status, currenttemp, iob_
         //console.error(profile.temptargetSet, target_bg, rT.COB);
         // only allow microboluses with COB or low temp targets, or within DIA hours of a bolus
         if (microBolusAllowed && enableSMB && bg > threshold) {
-            // never bolus more than maxSMBBasalMinutes worth of basal
-            var mealInsulinReq = round( meal_data.mealCOB / carb_ratio ,3);
-            if (typeof profile.maxSMBBasalMinutes === 'undefined' ) {
-                var maxBolus = round( profile.current_basal * 30 / 60 ,1);
-                console.error("profile.maxSMBBasalMinutes undefined: defaulting to 30m");
-            // if IOB covers more than COB, limit maxBolus to 30m of basal
-            } else if ( iob_data.iob > mealInsulinReq && iob_data.iob > 0 ) {
-                console.error("IOB",iob_data.iob,"> COB",meal_data.mealCOB+"; mealInsulinReq =",mealInsulinReq);
+            var mealInsulinReq = round(meal_data.mealCOB / carb_ratio, 3);
+            console.error("IOB", iob_data.iob, "COB", meal_data.mealCOB + "; mealInsulinReq =", mealInsulinReq);
+            if (meal_data.mealCOB > 0 && iob_data.iob <= mealInsulinReq) {
+                if (typeof profile.maxSMBBasalMinutes === 'undefined') {
+                    var maxBolus = round(profile.current_basal * 30 / 60, 1);
+                    console.error("profile.maxSMBBasalMinutes undefined: defaulting to 30m");
+                }
+                else {
+                    console.error("profile.maxSMBBasalMinutes:", profile.maxSMBBasalMinutes, "profile.current_basal:", profile.current_basal);
+                    maxBolus = round(profile.current_basal * profile.maxSMBBasalMinutes / 60, 1);
+                }
+            }
+            else {
                 if (profile.maxUAMSMBBasalMinutes) {
-                    console.error("profile.maxUAMSMBBasalMinutes:",profile.maxUAMSMBBasalMinutes,"profile.current_basal:",profile.current_basal);
-                    maxBolus = round( profile.current_basal * profile.maxUAMSMBBasalMinutes / 60 ,1);
+                    console.error("profile.maxUAMSMBBasalMinutes:", profile.maxUAMSMBBasalMinutes, "profile.current_basal:", profile.current_basal);
+                    maxBolus = round(profile.current_basal * profile.maxUAMSMBBasalMinutes / 60, 1);
                 } else {
                     console.error("profile.maxUAMSMBBasalMinutes undefined: defaulting to 30m");
-                    maxBolus = round( profile.current_basal * 30 / 60 ,1);
+                    maxBolus = round(profile.current_basal * 30 / 60, 1);
                 }
-            } else {
-                console.error("profile.maxSMBBasalMinutes:",profile.maxSMBBasalMinutes,"profile.current_basal:",profile.current_basal);
-                maxBolus = round( profile.current_basal * profile.maxSMBBasalMinutes / 60 ,1);
             }
-
 
             // ============  EATING NOW MODE  ==================== START ===
             var insulinReqPctDefault = 0.65; // this is the default insulinReqPct and maxBolus is respected outside of eating now

@@ -1260,6 +1260,7 @@
     <string name="key_use_eatingnow">key_use_eatingnow</string>
     <string name="key_eatingnow_smbbgoffset">key_eatingnow_smbbgoffset</string>
     <string name="key_use_ghostcob" translatable="false">key_use_ghostcob</string>
+    <string name="key_use_enw_overnight" translatable="false">key_use_enw_overnight</string>
     <string name="key_eatingnow_cobboostminutes" translatable="false">key_eatingnow_cobboostminutes</string>
     <string name="key_eatingnow_enwindowminutes" translatable="false">key_eatingnow_enwindowminutes</string>
     <string name="key_enbkfstwindowminutes" translatable="false">key_enbkfstwindowminutes</string>
@@ -1283,5 +1284,6 @@
     <string name="key_use_3pm_basal" translatable="false">key_use_3pm_basal</string>
     <string name="key_use_sens_tdd" translatable="false">key_use_sens_tdd</string>
     <string name="key_sens_tdd_scale" translatable="false">key_sens_tdd_scale</string>
-
+    <string name="key_eatingnow_showbutton" translatable="false">key_eatingnow_showbutton</string>
+    <string name="en_eatingnow_showbutton">Eating Now temp target</string>
 </resources>
