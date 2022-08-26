@@ -522,10 +522,14 @@ var determine_basal = function determine_basal(glucose_status, currenttemp, iob_
             enlog += "Sensitivity ratio <1 is now: "+sensitivityRatio+";\n";
         }
 
-        if (profile.enableSRTDD || profile.use_sens_TDD) {
+        // adjust base ISF
+        if (profile.use_sens_TDD) {
+            sens_normalTarget = sens_normalTarget;
+        } else if (profile.enableSRTDD) {
+            //sens_normalTarget = (ENtimeOK ? sens_normalTarget / sensitivityRatio : sens_normalTarget) ; //testing SR for ISF and basal during the day
             sens_normalTarget = sens_normalTarget;
         } else {
-            sens_normalTarget / sensitivityRatio;
+            sens_normalTarget = sens_normalTarget / sensitivityRatio;
         }
     }
     //enlog +="****** DEBUG ******\n"+"TDD/tdd24h = "+TDD+"/"+tdd24h+"="+TDD/tdd24h+"\n****** DEBUG ******\n";
