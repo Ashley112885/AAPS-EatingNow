@@ -405,7 +405,7 @@ var determine_basal = function determine_basal(glucose_status, currenttemp, iob_
     // set the ENW run and duration depending on meal type
     ENWindowRunTime = (firstMealWindow ? ENWindowRunTime : Math.min(cTime, bTime, ttTime));
     var ENWindowDuration = (firstMealWindow ? ENBkfstWindow : profile.ENWindow);
-    var ENWttDuration = (meal_data.activeENTempTargetDuration ? meal_data.activeENTempTargetDuration : ENWindowDuration);
+    var ENWttDuration = (meal_data.activeENTempTargetDuration > 0 ? meal_data.activeENTempTargetDuration : ENWindowDuration);
     //ENWindowDuration = (!firstMealWindow && meal_data.activeENTempTargetDuration > ENWindowDuration - ENWindowRunTime ? meal_data.activeENTempTargetDuration : ENWindowDuration);
     ENWindowDuration = (firstMealWindow ? ENWindowDuration : Math.min(ENWttDuration,ENWindowDuration));
 
@@ -1237,6 +1237,9 @@ var determine_basal = function determine_basal(glucose_status, currenttemp, iob_
 
         // calculate the prediction bg based on the weightings for minPredBG and eventualBG
         insulinReq_bg = (Math.max(minPredBG,40) * (1-eBGweight)) + (Math.max(eventualBG,40) * eBGweight);
+
+        // TBR only if not significant boost
+        //if (insulinReq_boost && insulinReq_bg <= target_bg) enableSMB = false; // meh
 
         // within ENW allow the eBGw to provide a stronger insulinReq_sens for UAM
         var sens_future = sens_normalTarget / (Math.log(insulinReq_bg/ins_val)+1);
