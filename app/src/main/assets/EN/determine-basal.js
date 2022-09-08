@@ -437,7 +437,7 @@ var determine_basal = function determine_basal(glucose_status, currenttemp, iob_
     // define default vars
     var SR_TDD = 1, sens_TDD = sens, TDD = 0;
     if (profile.use_sens_TDD || profile.enableSRTDD) {
-        var tdd7 = (meal_data.TDDAvg7d ? meal_data.TDDAvg7d : ((basal * 12)*100)/21);
+        var tdd7 = meal_data.TDDAvg7d;
         var tdd1 = meal_data.TDDAvg1d;
         var tdd_4 = meal_data.TDDLast4h;
         var tdd_8 = meal_data.TDDLast8h;
@@ -476,15 +476,17 @@ var determine_basal = function determine_basal(glucose_status, currenttemp, iob_
     var ISFbgMax = 180;
     enlog += "ISFbgMax:"+convert_bg(ISFbgMax, profile)+"\n";
 
-    // TIR_sens - the amount of % like AS *** UNDER CONSTRUCTION ****
-    var TIR_sens = 0;
-    enlog += "* TIR_sens:\n";
-//    if (meal_data.TIRW1H > 60 && TIR_sens == 0) TIR_sens += 2; //10%
-//    if (meal_data.TIRW2H > 10 && TIR_sens == 2) TIR_sens += 1; //15%
-//    if (meal_data.TIRW3H > 10 && TIR_sens == 3) TIR_sens += 1; //20%
-//    if (meal_data.TIRW4H > 10 && TIR_sens == 4) TIR_sens += 1; //25%
-    TIR_sens = Math.min (1+(TIR_sens*0.05), profile.autosens_max);
-    TIR_sens = 1; // disabling as testing
+    // TIR_sens - a very simple implementation of autoISF 5% per hour
+    var TIR_sens = 0, TIRH_percent = profile.resistancePerHr/100;
+    if (TIRH_percent) {
+        enlog += "* TIR_sens:\n";
+        if (meal_data.TIRW1H > 50) TIR_sens = meal_data.TIRW1H/100;
+        if (meal_data.TIRW2H > 0 && TIR_sens == 1) TIR_sens += meal_data.TIRW2H/100;
+        if (meal_data.TIRW3H > 0 && TIR_sens == 2) TIR_sens += meal_data.TIRW3H/100;
+        if (meal_data.TIRW4H > 0 && TIR_sens == 3) TIR_sens += meal_data.TIRW4H/100;
+    }
+    TIR_sens = Math.min (TIR_sens * TIRH_percent + 1 , profile.autosens_max);
+    //TIR_sens = 1; // disabling as testing
 
     // ISF at normal target
     var sens_normalTarget = sens, sens_profile = sens; // use profile sens and keep profile sens with any SR
@@ -1211,23 +1213,27 @@ var determine_basal = function determine_basal(glucose_status, currenttemp, iob_
         if (sens_predType == "UAM" && !COB) {
             eBGweight = 0.50;
             // sens calculation for insulinReq can be stronger when the EN TT and accelerating
-            insulinReq_sens = (delta > 0 && DeltaPct > 1.0 ? sens : insulinReq_sens);
+            //insulinReq_sens = (delta > 0 && DeltaPct > 1.0 ? sens : insulinReq_sens);
+            insulinReq_sens = (DeltaPct > 1.0 ? sens : insulinReq_sens);
+            insulinReq_sens = (bg > target_bg && eventualBG > target_bg ? sens : insulinReq_sens);
         }
         if (sens_predType == "COB" || (sens_predType == "UAM" && COB)) {
             eBGweight = 0.50;
             //eBGweight = (sens_predType == "COB" ? 0.50 : eBGweight);
             // sens calculation for insulinReq can be stronger when the EN TT and accelerating
-            insulinReq_sens = (delta > 0 && DeltaPct > 1.0 && sens_predType == "COB" ? sens : insulinReq_sens);
+            //insulinReq_sens = (delta > 0 && DeltaPct > 1.0 && sens_predType == "COB" ? sens : insulinReq_sens);
+            insulinReq_sens = (DeltaPct > 1.0 && sens_predType == "COB" ? sens : insulinReq_sens);
         }
 
         // SAFETY: set insulinReq_sens to profile sens if bg falling or slowing
-        insulinReq_sens = (delta < 0 && eventualBG < target_bg  || DeltaPct <=1 ? sens_normalTarget : insulinReq_sens);
+        //insulinReq_sens = (delta < 0 && eventualBG < target_bg  || DeltaPct <=1 ? sens_normalTarget : insulinReq_sens);
+        insulinReq_sens = (DeltaPct <= 1 ? sens_normalTarget : insulinReq_sens);
 
         // SAFETY: when high and delta is faster use minPredBG, slow delta inherits eBGw in an attempt to reduce stubborn high
         eBGweight = (bg > ISFbgMax && delta >= 9 ? eBGweight_orig : eBGweight);
 
         // SAFETY: if bg is falling or slowing revert to normal minPredBG weighting, excludes first meal
-        eBGweight = (delta < 0 && eventualBG < target_bg || DeltaPct <=1 && !firstMealWindow ? eBGweight_orig : eBGweight);
+        //eBGweight = (delta < 0 && eventualBG < target_bg || DeltaPct <=1 && !firstMealWindow ? eBGweight_orig : eBGweight);
 
         // SAFETY: if insulinReq_sens is stronger within ENW inherit eBGw else default
         if (insulinReq_sens < sens_normalTarget) eBGweight = (ENWindowOK ? eBGweight : eBGweight_orig);
